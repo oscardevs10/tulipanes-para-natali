@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { ParametricGeometry } from 'three/addons/geometries/ParametricGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -11,7 +10,6 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp01 = x => Math.min(1, Math.max(0, x));
-const smooth = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 const ease = t => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 const rand = (a, b) => a + Math.random() * (b - a);
 // shape params are either a number or a [closed, open] pair
@@ -28,29 +26,30 @@ renderer.shadowMap.type = THREE.PCFShadowMap;
 
 const scene = new THREE.Scene();
 scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
-scene.environmentIntensity = 0.35;
+scene.environmentIntensity = 0.7;
 
 const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 80);
-camera.position.set(2.4, 3.1, 8.8);
+camera.position.set(0, 1.6, 13.6);
 const controls = new OrbitControls(camera, canvas);
-controls.target.set(0, -0.85, 0);
+controls.target.set(0, -1.6, 0);
 Object.assign(controls, {
-  enableDamping: true, enablePan: false, minDistance: 5, maxDistance: 16,
-  minPolarAngle: 0.25, maxPolarAngle: 1.85, autoRotate: !reduceMotion, autoRotateSpeed: 0.3,
+  enableDamping: true, enablePan: false, minDistance: 7, maxDistance: 18,
+  minPolarAngle: 0.5, maxPolarAngle: 1.55, autoRotate: !reduceMotion, autoRotateSpeed: 0.4,
 });
 
-const key = new THREE.DirectionalLight(0xfff0dc, 3.4);
-key.position.set(3.5, 6, 3);
-key.target.position.set(0, -0.8, 0);
+// soft morning light from a window on the right
+const key = new THREE.DirectionalLight(0xfff4e6, 2.8);
+key.position.set(4, 7, 3);
+key.target.position.set(0, -1.6, 0);
 key.castShadow = true;
 key.shadow.mapSize.set(2048, 2048);
-Object.assign(key.shadow.camera, { left: -3, right: 3, top: 3, bottom: -3, near: 1, far: 20 });
+Object.assign(key.shadow.camera, { left: -4.5, right: 4.5, top: 4.5, bottom: -4.5, near: 1, far: 25 });
 key.shadow.bias = -0.0004;
 key.shadow.normalBias = 0.01;
-key.shadow.radius = 3;
-const rim = new THREE.DirectionalLight(0xffc6d2, 2.4);
-rim.position.set(-3, 2, -4);
-scene.add(key, key.target, rim, new THREE.HemisphereLight(0xc4ccff, 0x1a0e10, 0.6));
+key.shadow.radius = 6;
+const rim = new THREE.DirectionalLight(0xffe2ee, 1.4);
+rim.position.set(-4, 3, -4);
+scene.add(key, key.target, rim, new THREE.HemisphereLight(0xffffff, 0xe6d6cc, 0.9));
 
 // ---------- procedural textures ----------
 function canvasTexture(w, h, draw) {
@@ -81,73 +80,48 @@ const petalTex = canvasTexture(256, 512, (g, w, h) => {
   }
 });
 
-// pinnate leaf: light midrib plus lateral veins angled towards the tip
+// tulip leaf: parallel veins in uv space; the tapering geometry draws them together at the tip
 const leafTex = canvasTexture(256, 512, (g, w, h) => {
   g.fillStyle = '#b8b8b8';
   g.fillRect(0, 0, w, h);
-  g.strokeStyle = 'rgba(255,255,240,.55)';
-  for (let y = h - 30; y > 20; y -= 34) {
-    g.lineWidth = 1.6;
-    for (const dir of [-1, 1]) {
-      g.beginPath();
-      g.moveTo(w / 2, y);
-      g.quadraticCurveTo(w / 2 + dir * w * 0.25, y - 30, w / 2 + dir * w * 0.5, y - 70);
-      g.stroke();
-    }
+  for (let x = 8; x < w; x += rand(9, 15)) {
+    g.strokeStyle = `rgba(255,255,240,${rand(0.12, 0.3)})`;
+    g.lineWidth = rand(0.8, 1.6);
+    g.beginPath();
+    g.moveTo(x, h);
+    g.lineTo(x, 0);
+    g.stroke();
   }
-  g.lineWidth = 5;
+  g.strokeStyle = 'rgba(255,255,240,.45)';
+  g.lineWidth = 4;
   g.beginPath();
   g.moveTo(w / 2, h);
   g.lineTo(w / 2, 0);
   g.stroke();
 });
 
-// paper fibres, shared by the kraft and tissue wraps
-const paperTex = canvasTexture(512, 512, (g, w, h) => {
-  g.fillStyle = '#e6e6e6';
-  g.fillRect(0, 0, w, h);
-  for (let i = 0; i < 9000; i++) {
-    const x = Math.random() * w, y = Math.random() * h, a = Math.random() * Math.PI, l = rand(2, 9);
-    g.strokeStyle = Math.random() < 0.5 ? `rgba(90,60,30,${rand(0.05, 0.16)})` : `rgba(255,255,255,${rand(0.05, 0.2)})`;
-    g.lineWidth = rand(0.4, 1);
-    g.beginPath();
-    g.moveTo(x, y);
-    g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
-    g.stroke();
-  }
-  // crumple creases: a dark/light line pair reads as a fold in the bump map
-  for (let i = 0; i < 70; i++) {
-    const x = Math.random() * w, y = Math.random() * h, a = Math.random() * Math.PI, l = rand(60, 260);
-    const dx = Math.cos(a) * l, dy = Math.sin(a) * l;
-    for (const [off, col] of [[0, 'rgba(60,40,20,.10)'], [1.5, 'rgba(255,255,255,.14)']]) {
-      g.strokeStyle = col;
-      g.lineWidth = rand(1, 2.2);
-      g.beginPath();
-      g.moveTo(x + off, y + off);
-      g.lineTo(x + dx + off, y + dy + off);
-      g.stroke();
-    }
-  }
-});
-paperTex.wrapS = paperTex.wrapT = THREE.RepeatWrapping;
-paperTex.repeat.set(3, 2);
-
+// warm ivory wall with a peach glow where the light comes in and a lilac shade opposite
 scene.background = canvasTexture(1024, 1024, (g, w, h) => {
-  g.fillStyle = '#101216';
+  g.fillStyle = '#f6efe7';
   g.fillRect(0, 0, w, h);
-  const glow = g.createRadialGradient(w * 0.66, h * 0.42, 0, w * 0.66, h * 0.42, w * 0.6);
-  glow.addColorStop(0, '#2c1b21');
-  glow.addColorStop(1, 'rgba(16,18,22,0)');
-  g.fillStyle = glow;
-  g.fillRect(0, 0, w, h);
-});
-
-const dotTex = canvasTexture(64, 64, (g) => {
-  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  grd.addColorStop(0, 'rgba(255,255,255,1)');
-  grd.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = grd;
-  g.fillRect(0, 0, 64, 64);
+  for (const [x, y, r, col] of [[0.8, 0.2, 0.75, 'rgba(255,212,190,.8)'], [0.15, 0.9, 0.7, 'rgba(222,210,245,.75)'], [0.5, 0.5, 0.4, 'rgba(255,255,255,.7)']]) {
+    const glow = g.createRadialGradient(w * x, h * y, 0, w * x, h * y, w * r);
+    glow.addColorStop(0, col);
+    glow.addColorStop(1, 'rgba(246,239,231,0)');
+    g.fillStyle = glow;
+    g.fillRect(0, 0, w, h);
+  }
+  // sunlight through a four-pane window, slanted across the wall. The panes are drawn off-canvas so
+  // only their blurred shadow lands (shadowBlur works everywhere, ctx.filter does not)
+  g.shadowColor = 'rgba(255,253,246,.95)';
+  g.shadowBlur = 45;
+  g.shadowOffsetX = w * 2;
+  g.fillStyle = '#000';
+  for (const [x, y] of [[0.66, 0.04], [0.82, 0.04], [0.66, 0.34], [0.82, 0.34]]) {
+    g.setTransform(1, 0.1, -0.35, 1, w * x - w * 2, h * y);
+    g.fillRect(0, 0, w * 0.145, h * 0.28);
+  }
+  g.setTransform(1, 0, 0, 1, 0, 0);
 });
 
 // ---------- GPU-shaped surfaces (petals, sepals, leaves) ----------
@@ -222,27 +196,29 @@ depthMat.onBeforeCompile = (shader) => {
 };
 depthMat.customProgramCacheKey = () => 'surface-depth';
 
-// 'Rubor de Seda': dusty pink that pales towards the edges
+// four pastel varieties (lilac, apricot, butter, white flamed pink); the variety is the tens digit of
+// each petal's seed. Yellow heart inside, green flush outside at the base, a second colour at the rim.
 const petalUniforms = {
-  uBase: { value: new THREE.Color('#7a2238') }, uBody: { value: new THREE.Color('#d47088') },
-  uEdge: { value: new THREE.Color('#f6d3da') }, uBurn: { value: 0.85 },
+  uBase: { value: new THREE.Color('#e8c048') }, uGreen: { value: new THREE.Color('#9aa65a') },
+  uBody: { value: ['#a46ad0', '#f78e66', '#f5c84a', '#f8eef0'].map(c => new THREE.Color(c)) },
+  uEdge: { value: ['#e6cdf7', '#ffd8bc', '#fff3c4', '#e2587c'].map(c => new THREE.Color(c)) },
 };
 const petalMat = deform(new THREE.MeshPhysicalMaterial({
-  map: petalTex, bumpMap: petalTex, bumpScale: 0.12,
-  roughness: 0.68, sheen: 0.8, sheenColor: 0xffd9e0, sheenRoughness: 0.45, side: THREE.DoubleSide,
+  map: petalTex, bumpMap: petalTex, bumpScale: 0.08,
+  roughness: 0.5, sheen: 0.6, sheenColor: 0xffd9e4, sheenRoughness: 0.4, side: THREE.DoubleSide,
 }), 'petal', (shader) => {
   Object.assign(shader.uniforms, petalUniforms);
-  shader.fragmentShader = `uniform vec3 uBase, uBody, uEdge;\nuniform float uBurn;\nvarying vec4 vPetal;\n${shader.fragmentShader}`
+  shader.fragmentShader = `uniform vec3 uBase, uGreen, uBody[4], uEdge[4];\nvarying vec4 vPetal;\n${shader.fragmentShader}`
     .replace('#include <color_fragment>', `#include <color_fragment>
     {
       float ax = abs(vPetal.x), pv = vPetal.y;
-      vec3 col = mix(uBase, uBody, smoothstep(0.0, 0.45, pv));
-      col = mix(col, uEdge, 0.7 * smoothstep(0.7, 1.0, max(pv, ax * 0.9)));
-      col *= 0.86 + 0.28 * fract(sin(vPetal.w * 91.7) * 43758.5); // no two petals alike
-      col *= mix(1.0, uBurn, smoothstep(0.93, 1.0, max(pv, ax)) * vPetal.z); // darker rims on guard petals
-      if (gl_FrontFacing) col = mix(col, col * 1.35 + 0.015, 0.35); // outer face of a petal is paler
-      col = mix(col * vec3(0.9, 0.68, 0.78), col, smoothstep(0.0, 0.85, vPetal.z)); // heart petals are deeper in colour
-      col *= mix(0.3, 1.0, smoothstep(0.0, 0.6, pv)) * mix(0.45, 1.0, pow(vPetal.z, 0.6)); // baked occlusion
+      int hue = int(vPetal.w / 10.0);
+      vec3 body = uBody[hue] * mix(0.78, 1.0, smoothstep(0.15, 0.65, pv)); // deeper colour low in the cup
+      vec3 col = mix(body, uEdge[hue], 0.6 * smoothstep(0.6, 1.0, max(pv, ax * 0.85)));
+      col = mix(gl_FrontFacing ? uGreen : uBase, col, smoothstep(0.03, 0.3, pv)); // front face is the outside
+      col *= 0.9 + 0.2 * fract(sin(vPetal.w * 91.7) * 43758.5); // no two petals alike
+      if (gl_FrontFacing) col = mix(col, col * 1.2 + 0.01, 0.3); // outer face of a petal is paler
+      col *= mix(0.4, 1.0, smoothstep(0.0, 0.5, pv)) * mix(0.75, 1.0, vPetal.z); // baked occlusion in the cup
       diffuseColor.rgb *= col;
     }`)
     // thin petals: key/rim light hitting the far side scatters through to the viewer
@@ -254,30 +230,29 @@ const petalMat = deform(new THREE.MeshPhysicalMaterial({
     }
     #endif`);
 });
+// tulip foliage is a waxy blue-green
 const greenMat = deform(new THREE.MeshPhysicalMaterial({
-  color: 0x27461b, map: leafTex, bumpMap: leafTex, bumpScale: 2,
-  roughness: 0.5, clearcoat: 0.25, clearcoatRoughness: 0.4, side: THREE.DoubleSide,
+  color: 0x4b6f40, map: leafTex, bumpMap: leafTex, bumpScale: 1.2,
+  roughness: 0.55, sheen: 0.35, sheenColor: 0xa8c4b4, side: THREE.DoubleSide,
 }), 'green');
-const stemMat = new THREE.MeshPhysicalMaterial({ color: 0x22371a, roughness: 0.6, clearcoat: 0.15 });
-const kraftMat = new THREE.MeshPhysicalMaterial({
-  color: 0xb98b5c, map: paperTex, bumpMap: paperTex, bumpScale: 1.5, roughness: 0.88, side: THREE.DoubleSide,
+const stemMat = new THREE.MeshPhysicalMaterial({ color: 0x3f5e2e, roughness: 0.5, clearcoat: 0.2 });
+const antherMat = new THREE.MeshPhysicalMaterial({ color: 0x2a1a24, roughness: 0.7 });
+const pistilMat = new THREE.MeshPhysicalMaterial({ color: 0xd8d49a, roughness: 0.6 });
+// single-sided and no depth write, so neither its own back wall nor the water get hidden behind it
+const glassMat = new THREE.MeshPhysicalMaterial({
+  color: 0xffffff, transmission: 1, thickness: 0.3, roughness: 0.04, ior: 1.5,
+  depthWrite: false,
 });
-const tissueMat = new THREE.MeshPhysicalMaterial({
-  color: 0xd2b4ac, map: paperTex, bumpMap: paperTex, bumpScale: 0.8, roughness: 0.75,
-  sheen: 0.4, sheenColor: 0xffffff, side: THREE.DoubleSide,
+const waterMat = new THREE.MeshPhysicalMaterial({
+  color: 0xcfeee6, roughness: 0.05, transparent: true, opacity: 0.22, depthWrite: false,
 });
-const ribbonMat = new THREE.MeshPhysicalMaterial({
-  color: 0x5c0a16, roughness: 0.3, clearcoat: 0.5, clearcoatRoughness: 0.2,
-  sheen: 1, sheenColor: 0xff8a9a, sheenRoughness: 0.3, side: THREE.DoubleSide,
-});
-const gypMat = new THREE.MeshPhysicalMaterial({ color: 0xebe6dc, roughness: 0.8, sheen: 0.6, sheenColor: 0xffffff });
 
 // ---------- bouquet layout ----------
 const bouquet = new THREE.Group();
 scene.add(bouquet);
-const DOME_C = V(0, -1, 0), DOME_R = 1.55; // rose heads sit on a dome around this centre
-const BIND = V(0, -2.4, 0); // where the stems are tied
-const WRAP_Y = -2.7, WRAP_H = 2.3;
+const DOME_C = V(0, -1.35, 0), DOME_R = 1.45; // tulip heads sit on a dome around this centre
+const VASE_Y = -3.9; // the table top
+const NECK = V(0, -2.05, 0); // stems cross here, just inside the vase mouth
 
 // matrix whose local +Y is `up` and local +Z leans towards `out`
 function frame(pos, up, out, scale) {
@@ -292,77 +267,69 @@ function capDir(f, phi, maxTheta) {
   return V(Math.sin(th) * Math.cos(phi), Math.cos(th), Math.sin(th) * Math.sin(phi));
 }
 
-const roses = [], petalItems = [], greenItems = [], hipMatrices = [];
+const tulips = [], petalItems = [], greenItems = [], receptacles = [], stamens = [], pistils = [];
 
-function addRose(m, open, delay, count) {
-  const rose = { m, open, delay, o: 0 };
-  roses.push(rose);
-  for (let i = 0; i < count; i++) {
-    const t = i / (count - 1); // 0 = heart of the bud, 1 = outermost petal
-    const Lopen = lerp(0.42, 1.12, t ** 0.75) * rand(0.92, 1.08), Lclosed = lerp(0.5, 0.82, t);
-    const phi = i * 2.39996 + rand(-0.12, 0.12); // golden angle, slightly irregular
-    const r = lerp(0.03, 0.2, t);
-    const local = new THREE.Matrix4().makeRotationY(phi).setPosition(Math.sin(phi) * r, lerp(0.06, 0, t), Math.cos(phi) * r);
+// six tepals: three outer ones wrapped around three inner ones. Closed they bend inward into an
+// egg-shaped bud; open they lean out into a cup. Outer tepals open first so the inner ring stays inside.
+function addTulip(m, open, delay, hue) {
+  const tulip = { m, open, delay, o: 0 };
+  tulips.push(tulip);
+  const turn = rand(0, Math.PI * 2);
+  for (let i = 0; i < 6; i++) {
+    const outer = i % 2 === 0;
+    const phi = turn + (i / 6) * Math.PI * 2 + rand(-0.05, 0.05);
+    const r = outer ? 0.07 : 0.035;
+    const L = (outer ? 1 : 0.94) * rand(0.96, 1.04);
+    const local = new THREE.Matrix4().makeRotationY(phi).setPosition(Math.sin(phi) * r, 0, Math.cos(phi) * r);
     petalItems.push({
-      rose, matrix: m.clone().multiply(local), start: (1 - t) * 0.45, span: 0.55,
-      L: [Lclosed, Lopen], W: [Lclosed * lerp(0.42, 0.5, t), Lopen * lerp(0.42, 0.56, t)],
-      tilt: [lerp(0.08, 0.5, t), lerp(0.1, 1.28, t ** 1.7) + rand(-0.06, 0.06)],
-      bend: [lerp(-0.45, -0.7, t), lerp(-0.3, 0.85, t ** 1.3)],
-      curl: [lerp(2.1, 1.6, t), lerp(2.0, 0.6, t ** 0.8)],
-      roll: [0, lerp(0, 0.45, t ** 1.5)],
-      ruffle: 0.06 * t, seed: rand(0, 100), round: 0.28, notch: 0.05, profile: 0, ring: t,
+      flower: tulip, matrix: m.clone().multiply(local), start: outer ? 0 : 0.1, span: 0.9,
+      L: [L * 0.88, L], W: L * (outer ? 0.34 : 0.31),
+      tilt: outer ? [0.5, 0.52 + rand(-0.05, 0.05)] : [0.42, 0.44],
+      bend: outer ? [-1.2, 0.2] : [-1.1, -0.05],
+      curl: outer ? [1.15, 0.95] : [1.25, 1.15],
+      roll: [0, outer ? 0.12 : 0.06],
+      ruffle: 0.02, seed: hue * 10 + rand(0, 9.9), round: 0.5, notch: 0, profile: 0, ring: outer ? 1 : 0.6,
     });
   }
-  for (let i = 0; i < 5; i++) {
-    const phi = (i / 5) * Math.PI * 2 + rand(0, 1);
-    const local = new THREE.Matrix4().makeRotationY(phi).setPosition(Math.sin(phi) * 0.2, -0.07, Math.cos(phi) * 0.2);
-    greenItems.push({
-      rose, matrix: m.clone().multiply(local), start: 0, span: 0.45,
-      L: [0.78, 0.7], W: 0.1, tilt: [0.6, 1.75], bend: [-0.55, 0.9], curl: [1.2, 0.5], roll: 0,
-      ruffle: 0.12, seed: rand(0, 100), round: 0, notch: 0, profile: 1, ring: 1,
-    });
+  // six dark anthers around a pale pistil; only seen once the cup opens
+  for (let i = 0; i < 6; i++) {
+    const a = turn + (i / 6) * Math.PI * 2;
+    stamens.push(m.clone().multiply(frame(V(Math.sin(a) * 0.04, 0.02, Math.cos(a) * 0.04), V(Math.sin(a) * 0.2, 1, Math.cos(a) * 0.2), V(Math.sin(a), 0, Math.cos(a)), 1)));
   }
-  hipMatrices.push(m.clone().multiply(new THREE.Matrix4().makeScale(1, 1.1, 1).setPosition(0, -0.1, 0)));
+  pistils.push(m);
+  // swollen stem tip that closes the base of the cup
+  receptacles.push(m.clone().multiply(new THREE.Matrix4().makeScale(0.55, 0.4, 0.55)));
 }
 
-function leafCluster(pos, up, out, scale, tilt) {
-  up.normalize();
-  for (const [yaw, sc] of [[0, 1], [0.6, 0.8], [-0.6, 0.8]]) {
-    greenItems.push({
-      rose: null, matrix: frame(pos, up, out.clone().applyAxisAngle(up, yaw), scale * sc),
-      L: 0.62, W: 0.19, tilt: tilt + rand(-0.1, 0.1), bend: 0.35, curl: 0.55, roll: 0,
-      ruffle: 0.04, seed: rand(0, 100), round: 0, notch: 0, profile: 2, ring: 1,
-    });
-  }
+// long arching strap leaves, channelled down the middle
+function tulipLeaf(pos, up, out, scale) {
+  greenItems.push({
+    flower: null, matrix: frame(pos, up, out, scale),
+    L: 1.5, W: 0.2, tilt: rand(0.1, 0.3), bend: rand(0.5, 0.9), curl: 1, roll: 0,
+    ruffle: 0.03, seed: rand(0, 100), round: 0, notch: 0, profile: 2, ring: 1,
+  });
 }
 
-const ROSES = 12;
-const roseDirs = [];
-for (let i = 0; i < ROSES; i++) {
-  const dir = capDir((i + 0.5) / ROSES, i * 2.39996, 0.9);
+const TULIPS = 15;
+for (let i = 0; i < TULIPS; i++) {
+  const dir = capDir((i + 0.5) / TULIPS, i * 2.39996, 0.8);
   dir.x += rand(-0.04, 0.04);
   dir.z += rand(-0.04, 0.04);
   dir.normalize();
-  roseDirs.push(dir);
   const a = rand(0, Math.PI * 2);
-  addRose(
-    frame(DOME_C.clone().addScaledVector(dir, DOME_R), dir, V(Math.cos(a), 0, Math.sin(a)), rand(0.4, 0.45)),
-    rand(0.9, 1),
+  addTulip(
+    frame(DOME_C.clone().addScaledVector(dir, DOME_R + rand(-0.12, 0.12)), dir, V(Math.cos(a), 0, Math.sin(a)), rand(0.55, 0.6)),
+    rand(0.6, 1), // some stay half-open buds
     0.3 + Math.acos(dir.y) * 2.2 + rand(0, 0.5), // centre opens first, then the rings around it
-    30 + Math.floor(rand(0, 8)),
+    i % 4,
   );
 }
 
-// greenery: a skirt of leaves around the rim plus a few peeking between the roses
-for (let i = 0; i < 14; i++) {
-  const phi = (i / 14) * Math.PI * 2 + rand(-0.15, 0.15);
-  const dir = capDir(1, phi, rand(0.92, 1.05));
-  leafCluster(DOME_C.clone().addScaledVector(dir, DOME_R - 0.3), V(dir.x * 0.3, 1, dir.z * 0.3), V(Math.cos(phi), 0, Math.sin(phi)), rand(0.95, 1.15), rand(0.6, 0.8));
-}
-for (let i = 0; i < 8; i++) {
-  const phi = rand(0, Math.PI * 2);
-  const dir = capDir(rand(0.3, 0.9), phi, 0.9);
-  leafCluster(DOME_C.clone().addScaledVector(dir, DOME_R - 0.12), dir, V(Math.cos(phi), 0, Math.sin(phi)), 0.7, 0.7);
+// leaves rise out of the vase mouth and arch over its rim
+for (let i = 0; i < 9; i++) {
+  const phi = (i / 9) * Math.PI * 2 + rand(-0.25, 0.25);
+  const out = V(Math.cos(phi), 0, Math.sin(phi));
+  tulipLeaf(NECK.clone().addScaledVector(out, 0.28), V(out.x * rand(0.25, 0.45), 1, out.z * rand(0.25, 0.45)), out, rand(0.8, 1));
 }
 
 function instanced(geo, material, items) {
@@ -389,7 +356,7 @@ function updateShapes() {
   for (const { geo, items } of surfaceGroups) {
     const a0 = geo.attributes.aP0, a1 = geo.attributes.aP1;
     items.forEach((it, i) => {
-      const k = it.rose ? ease(clamp01((it.rose.o - it.start) / it.span)) : 1;
+      const k = it.flower ? ease(clamp01((it.flower.o - it.start) / it.span)) : 1;
       a0.setXYZW(i, at(it.L, k), at(it.W, k), at(it.tilt, k), at(it.bend, k));
       a1.setXYZW(i, at(it.curl, k), at(it.roll, k), it.ruffle, it.seed);
     });
@@ -397,123 +364,148 @@ function updateShapes() {
   }
 }
 
-const hips = new THREE.InstancedMesh(new THREE.SphereGeometry(0.15, 24, 16), stemMat, hipMatrices.length);
-hipMatrices.forEach((m, i) => hips.setMatrixAt(i, m));
-hips.castShadow = hips.receiveShadow = true;
-bouquet.add(hips);
+function instancedParts(geo, material, matrices) {
+  const mesh = new THREE.InstancedMesh(geo, material, matrices.length);
+  matrices.forEach((m, i) => mesh.setMatrixAt(i, m));
+  mesh.castShadow = mesh.receiveShadow = true;
+  bouquet.add(mesh);
+}
+instancedParts(new THREE.SphereGeometry(0.15, 24, 16), stemMat, receptacles);
+instancedParts(mergeGeometries([ // filament + anther
+  new THREE.CylinderGeometry(0.01, 0.014, 0.22, 6).translate(0, 0.11, 0),
+  new THREE.CapsuleGeometry(0.022, 0.09, 4, 8).translate(0, 0.27, 0),
+]), antherMat, stamens);
+instancedParts(mergeGeometries([ // column + three-lobed stigma
+  new THREE.CylinderGeometry(0.035, 0.045, 0.24, 12).translate(0, 0.12, 0),
+  new THREE.SphereGeometry(0.06, 12, 8).scale(1, 0.5, 1).translate(0, 0.25, 0),
+]), pistilMat, pistils);
 
-// stems run back from each head, gather at the tie, then fan slightly below it
-const stems = new THREE.Mesh(mergeGeometries(roses.map(({ m }) => {
+// stems run back from each head, cross in the vase mouth, then splay out across its floor
+const stems = new THREE.Mesh(mergeGeometries(tulips.map(({ m }) => {
   const a = rand(0, Math.PI * 2);
   return new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
-    V(0, -0.22, 0).applyMatrix4(m), V(0, -0.9, 0).applyMatrix4(m),
-    BIND.clone().add(V(rand(-0.05, 0.05), 0, rand(-0.05, 0.05))), V(Math.cos(a) * 0.22, -3.9, Math.sin(a) * 0.22),
-  ]), 64, 0.022, 8);
+    V(0, 0, 0).applyMatrix4(m), V(0, -1, 0).applyMatrix4(m),
+    NECK.clone().add(V(rand(-0.18, 0.18), 0, rand(-0.18, 0.18))), V(Math.cos(a) * 0.35, VASE_Y + 0.08, Math.sin(a) * 0.35),
+  ]), 64, 0.03, 8);
 })), stemMat);
 stems.castShadow = stems.receiveShadow = true;
 bouquet.add(stems);
 
-// baby's breath: sprays of tiny lumpy florets on fine branching twigs, filling the gaps between roses
-const florets = [], twigs = [];
-for (let c = 0, tries = 0; c < 45 && tries < 2000; tries++) {
-  const dir = capDir(Math.random(), rand(0, Math.PI * 2), 1.0);
-  if (roseDirs.some(d => d.angleTo(dir) < 0.2)) continue;
-  c++;
-  const centre = DOME_C.clone().addScaledVector(dir, DOME_R + 0.16);
-  const base = DOME_C.clone().addScaledVector(dir, DOME_R - 0.15);
-  const forks = [0, 1, 2, 3].map(() => centre.clone().addScaledVector(dir, -0.05).add(V(rand(-0.06, 0.06), rand(-0.03, 0.03), rand(-0.06, 0.06))));
-  for (const fork of forks) twigs.push(base, fork);
-  for (let f = 0; f < 22; f++) {
-    const p = centre.clone().add(V(rand(-0.11, 0.11), rand(-0.05, 0.05), rand(-0.11, 0.11)));
-    const s = rand(0.011, 0.018);
-    twigs.push(forks[f % 4], p);
-    florets.push(new THREE.Matrix4().compose(p, new THREE.Quaternion().setFromEuler(new THREE.Euler(rand(0, 3), rand(0, 3), 0)), V(s, s * 0.75, s)));
-  }
-}
-const floretGeo = new THREE.IcosahedronGeometry(1, 2);
-const fp = floretGeo.attributes.position;
-for (let i = 0; i < fp.count; i++) { // ruffled puff; position-based so shared corners stay welded
-  const x = fp.getX(i), y = fp.getY(i), z = fp.getZ(i), k = 1 + 0.28 * Math.sin(7 * x) * Math.sin(7 * y) * Math.sin(7 * z);
-  fp.setXYZ(i, x * k, y * k, z * k);
-}
-floretGeo.computeVertexNormals();
-const gyps = new THREE.InstancedMesh(floretGeo, gypMat, florets.length);
-florets.forEach((m, i) => gyps.setMatrixAt(i, m));
-gyps.castShadow = gyps.receiveShadow = true;
-bouquet.add(gyps, new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(twigs), new THREE.LineBasicMaterial({ color: 0x6f7c4c })));
+// bubble vase: a lathed glass shell (outer wall up, inner wall back down) with water in its belly
+const vaseOutline = new THREE.SplineCurve([[0.5, 0], [0.8, 0.35], [0.93, 0.8], [0.85, 1.25], [0.56, 1.62], [0.43, 1.88], [0.48, 2]]
+  .map(([x, y]) => new THREE.Vector2(x, y))).getPoints(64);
+const WALL = 0.035, WATER = 0.95;
+const vase = new THREE.Mesh(new THREE.LatheGeometry([
+  new THREE.Vector2(0, 0), ...vaseOutline,
+  ...[...vaseOutline].reverse().map(p => new THREE.Vector2(p.x - WALL, Math.max(p.y, WALL))), new THREE.Vector2(0, WALL),
+], 96).translate(0, VASE_Y, 0), glassMat);
+const waterSide = vaseOutline.filter(p => p.y > WALL && p.y < WATER).map(p => new THREE.Vector2(p.x - WALL - 0.005, p.y));
+const water = new THREE.Mesh(new THREE.LatheGeometry([
+  new THREE.Vector2(0, WALL), ...waterSide, new THREE.Vector2(0, waterSide.at(-1).y),
+], 96).translate(0, VASE_Y, 0), waterMat);
+water.renderOrder = 1;
 
-// florist wrap: overlapping sheets on a cone with soft pleats, crinkles and pointed tops. Pleats and
-// crinkles follow the angle around the bouquet (not the sheet) so overlapping sheets nest cleanly.
-function wrapSheet({ a0, span, rTop, height, crinkle, offset, tip, seed, inner }) {
-  return new ParametricGeometry((u, v, out) => {
-    const a = a0 + (u - 0.5) * span;
-    // tissue only ruffles where it rises above the kraft; lower down it hugs a cone inside it
-    const free = inner ? smooth(0.86, 0.97, v) : 1;
-    const pleat = Math.abs(Math.sin(a * 5 + seed)) * 0.2 * v;
-    // sheet edges lift away and the top folds outward; tissue less so, so it never hangs over the kraft
-    const flare = smooth(0.8, 1, Math.abs(u * 2 - 1)) * (inner ? 0.1 : 0.25) * v;
-    const lip = smooth(0.82, 1, v) * (inner ? 0.08 : 0.3);
-    const noise = crinkle * (Math.sin(a * 13 + seed) * Math.sin(v * 23 + seed * 2) + 0.5 * Math.sin(a * 25 + v * 53 + seed)) * v;
-    const tie = 1 - 0.35 * Math.exp(-(((v - (BIND.y - WRAP_Y) / height) / 0.06) ** 2)); // paper cinched by the ribbon
-    const r = (lerp(0.16, rTop, v ** 1.25) + offset + free * (pleat + flare + lip + noise)) * tie;
-    const top = tip * (1 - Math.abs(u * 2 - 1)) ** 1.5 * v ** 3; // sheet corner points up
-    out.set(Math.cos(a) * r, WRAP_Y + v * height + top + Math.sin(u * Math.PI * 3 + a0) * 0.06 * v ** 4, Math.sin(a) * r);
-  }, 112, 64);
-}
-for (let i = 0; i < 3; i++) {
-  for (const [mat, geo] of [
-    [tissueMat, wrapSheet({ a0: i * 2.1 + 1.05, span: 2.6, rTop: 1.3, height: WRAP_H + 0.18, crinkle: 0.03, offset: i * 0.015, tip: 0.2, seed: 1, inner: true })],
-    [kraftMat, wrapSheet({ a0: i * 2.1, span: 2.8, rTop: 1.45, height: WRAP_H, crinkle: 0.015, offset: 0.06 + i * 0.02, tip: 0.45, seed: 0, inner: false })],
-  ]) {
-    const sheet = new THREE.Mesh(geo, mat);
-    sheet.castShadow = sheet.receiveShadow = true;
-    bouquet.add(sheet);
-  }
-}
+// the table itself stays invisible; it only catches the shadow
+const table = new THREE.Mesh(new THREE.PlaneGeometry(30, 30).rotateX(-Math.PI / 2), new THREE.ShadowMaterial({ opacity: 0.16 }));
+table.position.y = VASE_Y;
+table.receiveShadow = true;
+scene.add(vase, water, table);
 
-// satin ribbon at the tie, with a bow at the front
-const ribbon = new THREE.Group();
-ribbon.position.copy(BIND);
-ribbon.add(new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.28, 0.14, 64, 1, true), ribbonMat));
-const bow = new THREE.Group();
-bow.position.z = 0.31;
-const strip = fn => new THREE.Mesh(new ParametricGeometry(fn, 48, 4), ribbonMat);
-for (const side of [-1, 1]) {
-  bow.add(strip((u, v, out) => { // loop
-    const a = u * Math.PI * 2;
-    out.set(side * 0.21 * (1 - Math.cos(a)), 0.05 * (1 - Math.cos(a)) + (v - 0.5) * 0.11, 0.06 * Math.sin(a) * side);
-  }));
-  bow.add(strip((u, v, out) => { // tail
-    out.set(side * (0.03 + 0.13 * u) + (v - 0.5) * 0.1, -0.5 * u, 0.03 * Math.sin(u * 5) + 0.05 * u);
-  }));
-}
-const knot = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), ribbonMat);
-knot.scale.set(0.06, 0.07, 0.045);
-bow.add(knot);
-ribbon.add(bow);
-ribbon.traverse(o => { o.castShadow = o.receiveShadow = true; });
-bouquet.add(ribbon);
-
-// ---------- dust motes in the light ----------
-const dustPos = new Float32Array(160 * 3).map((_, i) => (i % 3 === 1 ? rand(-3.5, 2.5) : rand(-4, 4)));
-const dustGeo = new THREE.BufferGeometry();
-dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
-const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({
-  size: 0.035, map: dotTex, color: 0xffd8c4, transparent: true, opacity: 0.5,
-  depthWrite: false, blending: THREE.AdditiveBlending,
+// light focused by the water: a warm bright patch inside the vase's shadow, stretched away from the sun
+const caustic = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.9).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({
+  map: canvasTexture(128, 128, (g, w, h) => {
+    const grd = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+    grd.addColorStop(0, 'rgba(255,240,205,1)');
+    grd.addColorStop(1, 'rgba(255,240,205,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, w, h);
+  }),
+  transparent: true, opacity: 0.4, depthWrite: false, blending: THREE.AdditiveBlending,
 }));
-scene.add(dust);
+caustic.position.set(-0.7, VASE_Y + 0.003, -0.52);
+caustic.rotation.y = -Math.atan2(3, 4); // along the key light's direction across the table
+caustic.renderOrder = 2;
+scene.add(caustic);
+
+// a folded note propped on the table beside the vase
+function drawNote(g, w, h) {
+  g.fillStyle = '#fffaf4';
+  g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 4000; i++) {
+    g.fillStyle = `rgba(120,90,70,${Math.random() * 0.04})`;
+    g.fillRect(Math.random() * w, Math.random() * h, 2, 2);
+  }
+  g.strokeStyle = 'rgba(178,80,122,.4)';
+  g.lineWidth = 3;
+  g.strokeRect(36, 36, w - 72, h - 72);
+  g.textAlign = 'center';
+  g.fillStyle = '#6a2445';
+  g.font = '700 150px "Dancing Script", cursive';
+  g.fillText('Para ti, Natali', w / 2, h * 0.52);
+  g.fillStyle = '#8a4a68';
+  g.font = '700 66px "Dancing Script", cursive';
+  g.fillText('con todo mi cariño ♡', w / 2, h * 0.77);
+}
+const noteTex = canvasTexture(1024, 640, drawNote);
+// the script font arrives after the first frame; redraw once it is there
+document.fonts.load('700 150px "Dancing Script"').then(() => {
+  drawNote(noteTex.image.getContext('2d'), 1024, 640);
+  noteTex.needsUpdate = true;
+});
+const CARD_W = 1.2, CARD_H = 0.76, LEAN = 0.32;
+const note = new THREE.Group();
+for (const [lean, mat] of [
+  [-LEAN, new THREE.MeshPhysicalMaterial({ map: noteTex, roughness: 0.85 })],
+  [LEAN, new THREE.MeshPhysicalMaterial({ color: 0xfffaf4, roughness: 0.85, side: THREE.DoubleSide })],
+]) {
+  // each half hangs from the fold at the top; the front half leans towards the viewer
+  const half = new THREE.Mesh(new THREE.PlaneGeometry(CARD_W, CARD_H).translate(0, -CARD_H / 2, 0), mat);
+  half.position.y = CARD_H * Math.cos(LEAN);
+  half.rotation.x = lean;
+  half.castShadow = half.receiveShadow = true;
+  note.add(half);
+}
+note.position.set(1.6, VASE_Y, 0.4);
+note.rotation.y = -0.25;
+scene.add(note);
+
+// a few loose petals drifting down through the light, kept clear of the bouquet
+const DRIFT = reduceMotion ? 0 : 14;
+const driftGeo = new THREE.CircleGeometry(1, 20).scale(0.075, 0.11, 1); // oval petal
+const dpos = driftGeo.attributes.position;
+for (let i = 0; i < dpos.count; i++) dpos.setZ(i, -9 * dpos.getX(i) ** 2 + 0.03 * dpos.getY(i) / 0.11); // cupped, tip curling back
+driftGeo.computeVertexNormals();
+const drift = new THREE.InstancedMesh(driftGeo, new THREE.MeshPhysicalMaterial({
+  roughness: 0.6, sheen: 0.5, sheenColor: 0xffffff, side: THREE.DoubleSide,
+}), DRIFT);
+const spawnX = () => (Math.random() < 0.5 ? -1 : 1) * rand(1.4, 4.5);
+const drifters = Array.from({ length: DRIFT }, (_, i) => {
+  drift.setColorAt(i, petalUniforms.uBody.value[i % 4].clone().lerp(petalUniforms.uEdge.value[i % 4], 0.5));
+  return { p: V(spawnX(), rand(-3.5, 2.5), rand(-3, 2)), fall: rand(0.12, 0.25), spin: V(rand(-0.5, 0.5), rand(-0.5, 0.5), rand(-0.5, 0.5)), phase: rand(0, 6) };
+});
+scene.add(drift);
+const dMat = new THREE.Matrix4(), dQuat = new THREE.Quaternion(), dEuler = new THREE.Euler(), dPos = V(0, 0, 0), ONE = V(1, 1, 1);
+function updateDrift(t, dt) {
+  drifters.forEach((d, i) => {
+    d.p.y -= d.fall * dt;
+    if (d.p.y < VASE_Y) d.p.set(spawnX(), 2.8, rand(-3, 2));
+    dPos.set(d.p.x + Math.sin(t * 0.6 + d.phase) * 0.35, d.p.y, d.p.z);
+    dEuler.set(t * d.spin.x + d.phase, t * d.spin.y, t * d.spin.z);
+    drift.setMatrixAt(i, dMat.compose(dPos, dQuat.setFromEuler(dEuler), ONE));
+  });
+  drift.instanceMatrix.needsUpdate = true;
+}
 
 // ---------- bloom ----------
-const ROSE_BLOOM = 7; // seconds per rose; delays stagger them across ~10 s
+const TULIP_BLOOM = 7; // seconds per tulip; delays stagger them across ~10 s
 let bloomStart = performance.now() + 600;
-let lastSum = -1;
+let lastSum = -1, lastT = 0;
 document.getElementById('replay').addEventListener('click', () => { if (!reduceMotion) bloomStart = performance.now(); });
 const bloomEl = document.getElementById('bloom');
-document.getElementById('rose-count').textContent = roses.length;
+document.getElementById('flower-count').textContent = tulips.length;
 document.getElementById('petal-count').textContent = petalItems.length;
 
-// ambient occlusion darkens the creases between petals and roses; its normal/depth pass gets the
+// ambient occlusion darkens the creases between petals and flowers; its normal/depth pass gets the
 // same vertex shaping, otherwise it would see the petals as flat quads
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
 const gtao = new GTAOPass(scene, camera, 1, 1);
@@ -529,10 +521,9 @@ function resize() {
   renderer.setSize(w, h, false);
   composer.setSize(w, h);
   camera.aspect = aspect;
-  camera.zoom = Math.min(1, aspect * 1.25);
-  // wide: bouquet sits right of the headline; narrow: below it
-  if (aspect > 1.1) camera.setViewOffset(w, h, -w * 0.17, 0, w, h);
-  else camera.setViewOffset(w, h, 0, -h * 0.14, w, h);
+  camera.zoom = Math.min(1, aspect * 1.3);
+  // vase sits centred between the title above and the button below
+  camera.setViewOffset(w, h, 0, -h * 0.04, w, h);
   camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize);
@@ -543,21 +534,19 @@ console.assert(surfaceGroups.every(({ geo }) => geo.attributes.aP0.array.every(N
 renderer.setAnimationLoop((now) => {
   const elapsed = reduceMotion ? Infinity : (now - bloomStart) / 1000;
   let sum = 0;
-  for (const r of roses) {
-    const p = ease(clamp01((elapsed - r.delay) / ROSE_BLOOM));
+  for (const r of tulips) {
+    const p = ease(clamp01((elapsed - r.delay) / TULIP_BLOOM));
     r.o = r.open * p;
     sum += p;
   }
   if (sum !== lastSum) {
     lastSum = sum;
     updateShapes();
-    bloomEl.textContent = `${Math.round((sum / roses.length) * 100)}%`;
+    bloomEl.textContent = `${Math.round((sum / tulips.length) * 100)}%`;
   }
   const t = now / 1000;
-  bouquet.rotation.z = Math.sin(t * 0.7) * 0.01;
-  bouquet.rotation.x = Math.sin(t * 0.5 + 1) * 0.008;
-  dust.rotation.y = t * 0.015;
-  dust.position.y = Math.sin(t * 0.2) * 0.08;
+  updateDrift(t, Math.min(0.05, t - lastT)); // clamp so a background tab doesn't drop them all at once
+  lastT = t;
   controls.update();
   composer.render();
 });
